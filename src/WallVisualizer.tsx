@@ -1,80 +1,30 @@
 import React, { useState } from 'react';
 
-// Define types for rows and walls
-type Row = number[];
-type Wall = Row[];
-
-// Helper function to generate all valid rows of width `w`
-const generateRows = (width: number): Row[] => {
-    if (width === 0) return [[]];
-    if (width < 0) return [];
-
-    const rows: Row[] = [];
-    [1, 2, 3, 4].forEach((brick) => {
-        const subRows = generateRows(width - brick);
-        subRows.forEach((row) => rows.push([brick, ...row]));
-    });
-    return rows;
-};
-
-// Helper function to calculate cut points in a row
-const getCutPoints = (row: Row): number[] => {
-    const points: number[] = [];
-    let position = 0;
-    for (let i = 0; i < row.length - 1; i++) {
-        position += row[i];
-        points.push(position);
-    }
-    return points;
-};
-
-// Helper function to check if two rows are compatible
-const isCompatible = (row1: Row, row2: Row): boolean => {
-    const cuts1 = getCutPoints(row1);
-    const cuts2 = getCutPoints(row2);
-    return !cuts1.some((point) => cuts2.includes(point));
-};
-
-// Main React Component
 const WallVisualizer: React.FC = () => {
     const [width, setWidth] = useState<number>(4);
     const [height, setHeight] = useState<number>(2);
-    const [walls, setWalls] = useState<Wall[]>([]);
+    const [walls, setWalls] = useState<number[][][]>([]);
+    const [loading, setLoading] = useState<boolean>(false);
 
-    // Generate all valid walls
     const generateWalls = () => {
-        const rows = generateRows(width);
+        setLoading(true);
+        const worker = new Worker(new URL('./wallWorker.ts', import.meta.url));
 
-        // Build compatibility graph
-        const compatibility: Record<string, Row[]> = {};
-        rows.forEach((row) => {
-            compatibility[row.join(',')] = rows.filter((otherRow) =>
-                isCompatible(row, otherRow)
-            );
-        });
+        worker.postMessage({ width, height });
 
-        // Dynamic programming to find all valid walls
-        let dp: Wall[][] = rows.map((row) => [[[...row]]]); // Base case: height 1
-        for (let h = 2; h <= height; h++) {
-            const newDp: Wall[][] = [];
-            rows.forEach((row, index) => {
-                const compatibleWalls: Wall[] = compatibility[row.join(',')]
-                    .flatMap((compatibleRow) =>
-                        dp[rows.findIndex((r) => r.join(',') === compatibleRow.join(','))]
-                            .map((wall) => [row, ...wall])
-                    );
-                newDp[index] = compatibleWalls;
-            });
-            dp = newDp;
-        }
+        worker.onmessage = (event) => {
+            setWalls(event.data);
+            setLoading(false);
+            worker.terminate();
+        };
 
-        // Flatten all valid walls
-        const allWalls: Wall[] = dp.flat();
-        setWalls(allWalls);
+        worker.onerror = (error) => {
+            console.error('Error in Web Worker:', error);
+            setLoading(false);
+        };
     };
 
-    // Render a single row as bricks
-    const renderRow = (row: Row) =>
+    const renderRow = (row: number[]) =>
         row.map((brick, index) => (
             <div
                 key={index}
@@ -90,7 +40,7 @@ const WallVisualizer: React.FC = () => {
 
     return (
         <div style={{ padding: '20px' }}>
-            <h1>Wall Visualizer</h1>
+            <h1>Wall Visualizer with Web Workers</h1>
             <div style={{ marginBottom: '20px' }}>
                 <label>
                     Width:
@@ -114,8 +64,9 @@ const WallVisualizer: React.FC = () => {
                     Generate Walls
                 </button>
             </div>
+            {loading && <p>Generating walls, please wait...</p>}
             <div>
-                {walls.length > 0 ? (
+                {walls.length > 0 && !loading ? (
                     walls.map((wall, wallIndex) => (
                         <div
                             key={wallIndex}
@@ -129,7 +80,7 @@ const WallVisualizer: React.FC = () => {
                         </div>
                     ))
                 ) : (
-                    <p>No walls generated yet. Adjust dimensions and click "Generate Walls".</p>
+                    !loading && <p>No walls generated yet. Adjust dimensions and click "Generate Walls".</p>
                 )}
             </div>
         </div>
