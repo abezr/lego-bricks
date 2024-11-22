@@ -1,23 +1,19 @@
-﻿# Use Node.js as the base image
-FROM node:18.15.0-alpine
-
-# Set the working directory in the container
+﻿# Step 1: Build the application
+FROM node:16 AS builder
 WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm install
 
-# Copy package.json and yarn.lock to the container
-COPY package.json yarn.lock ./
-
-# Install dependencies
-RUN yarn install --frozen-lockfile
-
-# Install dependencies
-RUN yarn install
-
-# Copy the app's source code to the container
 COPY . .
+# Customize the environment variables as needed for your project
+ARG GENERIC_ENV_VARIABLE
+ENV GENERIC_ENV_VARIABLE $GENERIC_ENV_VARIABLE
+RUN npm run build
 
-# Build the React app
-RUN yarn build
+# Step 2: Set up the production environment
+FROM nginx:stable-alpine
+COPY --from=builder /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Serve the build
-CMD ["npx", "serve", "-s", "build"]
+EXPOSE 8080
+CMD ["nginx", "-g", "daemon off;"]
